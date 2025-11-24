@@ -51,6 +51,30 @@ class SwerveController(Node):
         self.declare_parameter("steering_joints", ["joint1", "joint2"])
         self.declare_parameter("drive_joints", ["joint1", "joint2"])
 
+        # Robot geometry parameters
+        self.declare_parameter("robot_length", 0.35)
+        self.declare_parameter("robot_width", 0.30)
+        self.declare_parameter("steering_radius", 0.05)
+        self.declare_parameter("wheel_radius", 0.04)
+        self.declare_parameter("wheel_width", 0.05)
+
+        # Motor constraint parameters
+        self.declare_parameter("steering_motor_max_velocity", 10.0)
+        self.declare_parameter("steering_motor_min_acceleration", 0.1)
+        self.declare_parameter("steering_motor_max_acceleration", 1.0)
+        self.declare_parameter("drive_motor_max_velocity", 10.0)
+        self.declare_parameter("drive_motor_min_acceleration", 0.1)
+        self.declare_parameter("drive_motor_max_acceleration", 1.0)
+
+        # Module configuration - names and positions
+        # Default: 4-wheel configuration (left_front, left_rear, right_rear, right_front)
+        # For 2-wheel: use ["front", "rear"] with positions along x-axis
+        self.declare_parameter("module_names", ["left_front", "left_rear", "right_rear", "right_front"])
+        # Default positions for 4-wheel (calculated from robot_length/width)
+        # These are relative to robot center
+        self.declare_parameter("module_positions_x", [0.125, -0.125, -0.125, 0.125])
+        self.declare_parameter("module_positions_y", [0.125, 0.125, -0.125, -0.125])
+
         self.get_logger().info(f'Initializing swerve controller ...')
 
         self.last_velocity_command: Twist = None
@@ -229,131 +253,107 @@ class SwerveController(Node):
         self.last_velocity_command_received_at = self.last_recorded_time
 
     def get_drive_modules(self) -> List[DriveModule]:
-        # Get the drive module information from the URDF and turn it into a list of drive modules.
-        #
-        # For now we don't read the URDF and just hard-code the drive modules
-        robot_length = 0.35
-        robot_width = 0.30
+        # Get the drive module information from parameters.
+        # The number of modules is determined by the number of steering/drive joints configured.
+        # Module positions are read from parameters, with defaults for common configurations.
 
-        steering_radius = 0.05
+        # Get geometry parameters with defaults
+        robot_length = self.get_parameter("robot_length").value
+        robot_width = self.get_parameter("robot_width").value
+        steering_radius = self.get_parameter("steering_radius").value
+        wheel_radius = self.get_parameter("wheel_radius").value
+        wheel_width = self.get_parameter("wheel_width").value
 
-        wheel_radius = 0.04
-        wheel_width = 0.05
+        # Get motor constraint parameters
+        steering_max_velocity = self.get_parameter("steering_motor_max_velocity").value
+        steering_min_acceleration = self.get_parameter("steering_motor_min_acceleration").value
+        steering_max_acceleration = self.get_parameter("steering_motor_max_acceleration").value
+        drive_max_velocity = self.get_parameter("drive_motor_max_velocity").value
+        drive_min_acceleration = self.get_parameter("drive_motor_min_acceleration").value
+        drive_max_acceleration = self.get_parameter("drive_motor_max_acceleration").value
 
-        # store the steering joints
+        # Store the steering joints
         steering_joint_names = self.get_parameter("steering_joints").value
         steering_joints = []
         for name in steering_joint_names:
             steering_joints.append(name)
-            self.get_logger().info(
-                f'Discovered steering joint: "{name}"'
-            )
+            self.get_logger().info(f'Discovered steering joint: "{name}"')
 
-        # store the drive joints
+        # Store the drive joints
         drive_joint_names = self.get_parameter("drive_joints").value
         drive_joints = []
         for name in drive_joint_names:
             drive_joints.append(name)
-            self.get_logger().info(
-                f'Discovered drive joint: "{name}"'
+            self.get_logger().info(f'Discovered drive joint: "{name}"')
+
+        # Validate that we have matching numbers of steering and drive joints
+        if len(steering_joints) != len(drive_joints):
+            raise ValueError(
+                f"Number of steering joints ({len(steering_joints)}) must match "
+                f"number of drive joints ({len(drive_joints)})"
             )
 
+        num_modules = len(steering_joints)
+        if num_modules < 2:
+            raise ValueError(f"At least 2 drive modules are required. Got {num_modules}.")
+
+        self.get_logger().info(f'Configuring {num_modules}-wheel swerve drive')
+
+        # Get module names and positions from parameters
+        module_names = self.get_parameter("module_names").value
+        module_positions_x = self.get_parameter("module_positions_x").value
+        module_positions_y = self.get_parameter("module_positions_y").value
+
+        # Validate module configuration
+        if len(module_names) != num_modules:
+            raise ValueError(
+                f"Number of module names ({len(module_names)}) must match "
+                f"number of joints ({num_modules})"
+            )
+        if len(module_positions_x) != num_modules or len(module_positions_y) != num_modules:
+            raise ValueError(
+                f"Module position arrays must have {num_modules} elements each"
+            )
+
+        # Create drive modules
         drive_modules: List[DriveModule] = []
-        drive_module_name = "left_front"
-        left_front = DriveModule(
-            name=drive_module_name,
-            steering_link=next((x for x in steering_joints if drive_module_name in x), "joint_steering_{}".format(drive_module_name)),
-            drive_link=next((x for x in drive_joints if drive_module_name in x), "joint_drive_{}".format(drive_module_name)),
-            steering_axis_xy_position=Point(0.5 * (robot_length - 2 * steering_radius), 0.5 * (robot_width - steering_radius), 0.0),
-            wheel_radius=wheel_radius,
-            wheel_width=wheel_width,
-            steering_motor_maximum_velocity=10.0,
-            steering_motor_minimum_acceleration=0.1,
-            steering_motor_maximum_acceleration=1.0,
-            drive_motor_maximum_velocity=10.0,
-            drive_motor_minimum_acceleration=0.1,
-            drive_motor_maximum_acceleration=1.0
-        )
-        drive_modules.append(left_front)
+        for i in range(num_modules):
+            module_name = module_names[i]
+            pos_x = module_positions_x[i]
+            pos_y = module_positions_y[i]
 
-        self.get_logger().info(
-            f'Configured drive module: "{left_front.name}" ' +
-            f'with steering link: "{left_front.steering_link_name}" ' +
-            f'and drive link: "{left_front.driving_link_name}" ' +
-            f'and position: ["{left_front.steering_axis_xy_position.x}", "{left_front.steering_axis_xy_position.y}"]'
-        )
+            # Find matching steering and drive joints by name or use index
+            steering_link = next(
+                (x for x in steering_joints if module_name in x),
+                steering_joints[i]
+            )
+            drive_link = next(
+                (x for x in drive_joints if module_name in x),
+                drive_joints[i]
+            )
 
-        drive_module_name = "left_rear"
-        left_rear = DriveModule(
-            name=drive_module_name,
-            steering_link=next((x for x in steering_joints if drive_module_name in x), "joint_steering_{}".format(drive_module_name)),
-            drive_link=next((x for x in drive_joints if drive_module_name in x), "joint_drive_{}".format(drive_module_name)),
-            steering_axis_xy_position=Point(-0.5 * (robot_length - 2 * steering_radius), 0.5 * (robot_width - steering_radius), 0.0),
-            wheel_radius=wheel_radius,
-            wheel_width=wheel_width,
-            steering_motor_maximum_velocity=10.0,
-            steering_motor_minimum_acceleration=0.1,
-            steering_motor_maximum_acceleration=1.0,
-            drive_motor_maximum_velocity=10.0,
-            drive_motor_minimum_acceleration=0.1,
-            drive_motor_maximum_acceleration=1.0
-        )
-        drive_modules.append(left_rear)
+            module = DriveModule(
+                name=module_name,
+                steering_link=steering_link,
+                drive_link=drive_link,
+                steering_axis_xy_position=Point(pos_x, pos_y, 0.0),
+                wheel_radius=wheel_radius,
+                wheel_width=wheel_width,
+                steering_motor_maximum_velocity=steering_max_velocity,
+                steering_motor_minimum_acceleration=steering_min_acceleration,
+                steering_motor_maximum_acceleration=steering_max_acceleration,
+                drive_motor_maximum_velocity=drive_max_velocity,
+                drive_motor_minimum_acceleration=drive_min_acceleration,
+                drive_motor_maximum_acceleration=drive_max_acceleration
+            )
+            drive_modules.append(module)
 
-        self.get_logger().info(
-            f'Configured drive module: "{left_rear.name}" ' +
-            f'with steering link: "{left_rear.steering_link_name}" ' +
-            f'and drive link: "{left_rear.driving_link_name}" ' +
-            f'and position: ["{left_rear.steering_axis_xy_position.x}", "{left_rear.steering_axis_xy_position.y}"]'
-        )
-
-        drive_module_name = "right_rear"
-        right_rear = DriveModule(
-            name=drive_module_name,
-            steering_link=next((x for x in steering_joints if drive_module_name in x), "joint_steering_{}".format(drive_module_name)),
-            drive_link=next((x for x in drive_joints if drive_module_name in x), "joint_drive_{}".format(drive_module_name)),
-            steering_axis_xy_position=Point(-0.5 * (robot_length - 2 * steering_radius), -0.5 * (robot_width - steering_radius), 0.0),
-            wheel_radius=wheel_radius,
-            wheel_width=wheel_width,
-            steering_motor_maximum_velocity=10.0,
-            steering_motor_minimum_acceleration=0.1,
-            steering_motor_maximum_acceleration=1.0,
-            drive_motor_maximum_velocity=10.0,
-            drive_motor_minimum_acceleration=0.1,
-            drive_motor_maximum_acceleration=1.0
-        )
-        drive_modules.append(right_rear)
-
-        self.get_logger().info(
-            f'Configured drive module: "{right_rear.name}" ' +
-            f'with steering link: "{right_rear.steering_link_name}" ' +
-            f'and drive link: "{right_rear.driving_link_name}" ' +
-            f'and position: ["{right_rear.steering_axis_xy_position.x}", "{right_rear.steering_axis_xy_position.y}"]'
-        )
-
-        drive_module_name = "right_front"
-        right_front = DriveModule(
-            name=drive_module_name,
-            steering_link=next((x for x in steering_joints if drive_module_name in x), "joint_steering_{}".format(drive_module_name)),
-            drive_link=next((x for x in drive_joints if drive_module_name in x), "joint_drive_{}".format(drive_module_name)),
-            steering_axis_xy_position=Point(0.5 * (robot_length - 2 * steering_radius), -0.5 * (robot_width - steering_radius), 0.0),
-            wheel_radius=wheel_radius,
-            wheel_width=wheel_width,
-            steering_motor_maximum_velocity=10.0,
-            steering_motor_minimum_acceleration=0.1,
-            steering_motor_maximum_acceleration=1.0,
-            drive_motor_maximum_velocity=10.0,
-            drive_motor_minimum_acceleration=0.1,
-            drive_motor_maximum_acceleration=1.0
-        )
-        drive_modules.append(right_front)
-
-        self.get_logger().info(
-            f'Configured drive module: "{right_front.name}" ' +
-            f'with steering link: "{right_front.steering_link_name}" ' +
-            f'and drive link: "{right_front.driving_link_name}" ' +
-            f'and position: ["{right_front.steering_axis_xy_position.x}", "{right_front.steering_axis_xy_position.y}"]'
-        )
+            self.get_logger().info(
+                f'Configured drive module: "{module.name}" '
+                f'with steering link: "{module.steering_link_name}" '
+                f'and drive link: "{module.driving_link_name}" '
+                f'and position: [{module.steering_axis_xy_position.x:.4f}, {module.steering_axis_xy_position.y:.4f}]'
+            )
 
         return drive_modules
 

@@ -66,9 +66,28 @@ class ControlModelBase(object):
     def state_of_wheel_modules_from_body_motion(self, state: BodyMotion) -> List[Tuple[DriveModuleDesiredValues]]:
         return []
 
-class SimpleFourWheelSteeringControlModel(ControlModelBase):
+class MultiWheelSteeringControlModel(ControlModelBase):
+    """
+    A general N-wheel independent steering control model.
+
+    Supports any number of wheels >= 2. The system uses matrix-based kinematics:
+    - 2 wheels: 4 equations, 3 unknowns (slightly over-determined)
+    - 3 wheels: 6 equations, 3 unknowns (over-determined)
+    - 4 wheels: 8 equations, 3 unknowns (over-determined, original design)
+
+    More wheels provide better noise rejection and redundancy.
+    """
+
+    # Minimum number of wheels required for the system to be solvable
+    MIN_WHEELS = 2
 
     def __init__(self, drive_modules: List[DriveModule]):
+        if len(drive_modules) < self.MIN_WHEELS:
+            raise ValueError(
+                f"At least {self.MIN_WHEELS} drive modules are required. "
+                f"Got {len(drive_modules)}."
+            )
+
         self.modules = drive_modules
 
         # The state of the drive modules can be found with the following equation:
@@ -81,16 +100,16 @@ class SimpleFourWheelSteeringControlModel(ControlModelBase):
         #  |A| = The state matrix that translates the body state to the drive module state
         #  V_i = The state vector for the drive modules = [v_1_x, v_1_y, v_2_x, v_2_y, ... , v_n_x, v_n_y]
         #
-        # the state matrix is an [2 * n ; 3] matrix
+        # the state matrix is an [2 * n ; 3] matrix where n is the number of wheels
+        # For n wheels:
         # [
         #    1.0   0.0   -module_1.y
         #    0.0   1.0   module_1.x
         #    1.0   0.0   -module_2.y
         #    0.0   1.0   module_2.x
-        #    1.0   0.0   -module_3.y
-        #    0.0   1.0   module_3.x
-        #    1.0   0.0   -module_4.y
-        #    0.0   1.0   module_4.x
+        #    ...
+        #    1.0   0.0   -module_n.y
+        #    0.0   1.0   module_n.x
         # ]
         arr = []
         for drive_module in drive_modules:
@@ -102,6 +121,11 @@ class SimpleFourWheelSteeringControlModel(ControlModelBase):
 
         self.inverse_kinematics_matrix = np.array(arr)
         self.forward_kinematics_matrix = pinv(self.inverse_kinematics_matrix)
+
+    @property
+    def wheel_count(self) -> int:
+        """Returns the number of wheels in this control model."""
+        return len(self.modules)
 
     # Forward kinematics
     def body_motion_from_wheel_module_states(self, states: List[DriveModuleMeasuredValues]) -> BodyMotion:
@@ -245,3 +269,7 @@ class SimpleFourWheelSteeringControlModel(ControlModelBase):
             result.append((forward_state, reverse_state))
 
         return result
+
+
+# Backward-compatible alias for the original class name
+SimpleFourWheelSteeringControlModel = MultiWheelSteeringControlModel

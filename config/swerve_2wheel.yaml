@@ -1,0 +1,55 @@
+swerve_controller:
+  ros__parameters:
+
+    robot_base_frame: base_footprint
+
+    twist_topic: cmd_vel
+
+    position_controller_name: "drive_module_steering_angle_controller"
+    velocity_controller_name: "drive_module_velocity_controller"
+
+    cycle_fequency: 50
+
+    # Robot geometry (meters)
+    robot_length: 0.35
+    robot_width: 0.30
+    steering_radius: 0.05
+    wheel_radius: 0.04
+    wheel_width: 0.05
+
+    # Motor constraints
+    steering_motor_max_velocity: 10.0      # rad/s
+    steering_motor_min_acceleration: 0.1   # rad/s^2
+    steering_motor_max_acceleration: 1.0   # rad/s^2
+    drive_motor_max_velocity: 10.0         # m/s
+    drive_motor_min_acceleration: 0.1      # m/s^2
+    drive_motor_max_acceleration: 1.0      # m/s^2
+
+    # ===========================================
+    # 2-WHEEL CONFIGURATION
+    # ===========================================
+    # Front and rear wheels along the longitudinal axis (x-axis)
+    # This configuration provides good forward/backward velocity and rotation estimation
+    # Lateral velocity (v_y) estimation is less accurate with this placement
+
+    module_names:
+      - front
+      - rear
+
+    # Module positions relative to robot center (meters)
+    # Front wheel at +x, rear wheel at -x, both on centerline (y=0)
+    module_positions_x:
+      - 0.125    # front
+      - -0.125   # rear
+
+    module_positions_y:
+      - 0.0      # front: on centerline
+      - 0.0      # rear: on centerline
+
+    steering_joints:
+      - joint_chassis_to_steering_front
+      - joint_chassis_to_steering_rear
+
+    drive_joints:
+      - joint_steering_to_wheel_front
+      - joint_steering_to_wheel_rear

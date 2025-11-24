@@ -18,7 +18,7 @@ from .profile import TransientVariableProfile
 
 # local
 from .control import BodyMotionCommand, DriveModuleMotionCommand, InvalidMotionCommandException, MotionCommand
-from .control_model import difference_between_angles, SimpleFourWheelSteeringControlModel
+from .control_model import difference_between_angles, MultiWheelSteeringControlModel
 from .control_profile import BodyMotionProfile, DriveModuleStateProfile
 from .drive_module import DriveModule
 from .states import BodyState, DriveModuleDesiredValues, DriveModuleMeasuredValues
@@ -41,8 +41,8 @@ class ModuleFollowsBodySteeringController():
         self.motion_profile_func = motion_profile_func
         self.logger = logger
 
-        # Use a simple control model for the time being. Just need something that roughly works
-        self.control_model = SimpleFourWheelSteeringControlModel(self.modules)
+        # Use a multi-wheel control model that supports 2, 3, 4, or more wheels
+        self.control_model = MultiWheelSteeringControlModel(self.modules)
 
         # Store the current (estimated) state of the body
         self.body_state: BodyState = BodyState(

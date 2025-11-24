@@ -10,14 +10,54 @@ swerve_controller:
 
     cycle_fequency: 50
 
+    # Robot geometry (meters)
+    robot_length: 0.35
+    robot_width: 0.30
+    steering_radius: 0.05
+    wheel_radius: 0.04
+    wheel_width: 0.05
+
+    # Motor constraints
+    steering_motor_max_velocity: 10.0      # rad/s
+    steering_motor_min_acceleration: 0.1   # rad/s^2
+    steering_motor_max_acceleration: 1.0   # rad/s^2
+    drive_motor_max_velocity: 10.0         # m/s
+    drive_motor_min_acceleration: 0.1      # m/s^2
+    drive_motor_max_acceleration: 1.0      # m/s^2
+
+    # ===========================================
+    # 4-WHEEL CONFIGURATION (default)
+    # ===========================================
+    # Module names (must match number of joints)
+    module_names:
+      - left_front
+      - left_rear
+      - right_rear
+      - right_front
+
+    # Module positions relative to robot center (meters)
+    # Calculated as: x = +/- 0.5 * (robot_length - 2 * steering_radius)
+    #                y = +/- 0.5 * (robot_width - steering_radius)
+    module_positions_x:
+      - 0.125    # left_front: front
+      - -0.125   # left_rear: rear
+      - -0.125   # right_rear: rear
+      - 0.125    # right_front: front
+
+    module_positions_y:
+      - 0.125    # left_front: left
+      - 0.125    # left_rear: left
+      - -0.125   # right_rear: right
+      - -0.125   # right_front: right
+
     steering_joints:
       - joint_chassis_to_steering_left_front
-      - joint_chassis_to_steering_right_front
       - joint_chassis_to_steering_left_rear
       - joint_chassis_to_steering_right_rear
+      - joint_chassis_to_steering_right_front
 
     drive_joints:
       - joint_steering_to_wheel_left_front
-      - joint_steering_to_wheel_right_front
       - joint_steering_to_wheel_left_rear
       - joint_steering_to_wheel_right_rear
+      - joint_steering_to_wheel_right_front
