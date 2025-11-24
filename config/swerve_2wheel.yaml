@@ -28,28 +28,28 @@ swerve_controller:
     # ===========================================
     # 2-WHEEL CONFIGURATION
     # ===========================================
-    # Front and rear wheels along the longitudinal axis (x-axis)
-    # This configuration provides good forward/backward velocity and rotation estimation
-    # Lateral velocity (v_y) estimation is less accurate with this placement
+    # Left and right wheels along the lateral axis (y-axis)
+    # Both wheels at x=0 (robot center), separated along y-axis
+    # This configuration provides good lateral velocity and rotation estimation
 
     module_names:
-      - front
-      - rear
+      - left
+      - right
 
     # Module positions relative to robot center (meters)
-    # Front wheel at +x, rear wheel at -x, both on centerline (y=0)
+    # Both wheels at x=0, left wheel at +y, right wheel at -y
     module_positions_x:
-      - 0.125    # front
-      - -0.125   # rear
+      - 0.0      # left: on center axis
+      - 0.0      # right: on center axis
 
     module_positions_y:
-      - 0.0      # front: on centerline
-      - 0.0      # rear: on centerline
+      - 0.125    # left: +y
+      - -0.125   # right: -y
 
     steering_joints:
-      - joint_chassis_to_steering_front
-      - joint_chassis_to_steering_rear
+      - joint_chassis_to_steering_left
+      - joint_chassis_to_steering_right
 
     drive_joints:
-      - joint_steering_to_wheel_front
-      - joint_steering_to_wheel_rear
+      - joint_steering_to_wheel_left
+      - joint_steering_to_wheel_right

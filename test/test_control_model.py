@@ -56,7 +56,7 @@ def create_drive_module(
 
 
 def create_two_wheel_drive_modules(
-    length: float = 1.0,
+    width: float = 1.0,
     wheel_radius: float = 0.1,
     wheel_width: float = 0.05,
     steering_max_velocity: float = 1.0,
@@ -65,13 +65,13 @@ def create_two_wheel_drive_modules(
     drive_max_velocity: float = 1.0,
     drive_min_acceleration: float = 0.1,
     drive_max_acceleration: float = 1.0) -> List[DriveModule]:
-    """Create a 2-wheel configuration with front and rear modules on the centerline."""
+    """Create a 2-wheel configuration with left and right modules (x=0, y=+/- width/2)."""
     result: List[DriveModule] = []
 
-    front_drive = create_drive_module(
-        name="front",
-        x=0.5 * length,
-        y=0.0,
+    left_drive = create_drive_module(
+        name="left",
+        x=0.0,
+        y=0.5 * width,
         wheel_radius=wheel_radius,
         wheel_width=wheel_width,
         steering_max_velocity=steering_max_velocity,
@@ -81,12 +81,12 @@ def create_two_wheel_drive_modules(
         drive_min_acceleration=drive_min_acceleration,
         drive_max_acceleration=drive_max_acceleration
     )
-    result.append(front_drive)
+    result.append(left_drive)
 
-    rear_drive = create_drive_module(
-        name="rear",
-        x=-0.5 * length,
-        y=0.0,
+    right_drive = create_drive_module(
+        name="right",
+        x=0.0,
+        y=-0.5 * width,
         wheel_radius=wheel_radius,
         wheel_width=wheel_width,
         steering_max_velocity=steering_max_velocity,
@@ -96,7 +96,7 @@ def create_two_wheel_drive_modules(
         drive_min_acceleration=drive_min_acceleration,
         drive_max_acceleration=drive_max_acceleration
     )
-    result.append(rear_drive)
+    result.append(right_drive)
 
     return result
 
@@ -815,43 +815,43 @@ def test_two_wheel_should_show_forward_movement_when_modules_pointing_forward():
 
 
 def test_two_wheel_should_show_rotation_when_modules_pointing_perpendicular():
-    """Test forward kinematics for 2-wheel: pure rotation (wheels pointing perpendicular to each other)."""
-    drive_modules = create_two_wheel_drive_modules(length=1.0)
+    """Test forward kinematics for 2-wheel: pure rotation (wheels pointing perpendicular)."""
+    drive_modules = create_two_wheel_drive_modules(width=1.0)
     controller = MultiWheelSteeringControlModel(drive_modules)
 
-    # For pure rotation around center with front/rear wheels on centerline:
-    # Front wheel at (0.5, 0) should point at 90 degrees (left/+y direction)
-    # Rear wheel at (-0.5, 0) should point at -90 degrees (right/-y direction)
-    # Both moving forward at velocity v creates rotation omega = v / r where r = 0.5
+    # For pure counter-clockwise rotation around center with left/right wheels on y-axis:
+    # Left wheel at (0, 0.5) should point at 180 degrees (-x direction), moving forward
+    # Right wheel at (0, -0.5) should point at 0 degrees (+x direction), moving forward
+    # This creates counter-clockwise rotation with omega = v / r where r = 0.5
     states: List[DriveModuleMeasuredValues] = []
 
-    # Front wheel points +y (90 degrees), moving forward
-    front_state = DriveModuleMeasuredValues(
+    # Left wheel points -x (180 degrees), moving forward -> contributes to CCW rotation
+    left_state = DriveModuleMeasuredValues(
         drive_modules[0].name,
         drive_modules[0].steering_axis_xy_position.x,
         drive_modules[0].steering_axis_xy_position.y,
-        math.radians(90),
+        math.radians(180),
         0.0, 0.0, 0.0,
         0.5,  # velocity
         0.0, 0.0,
     )
-    states.append(front_state)
+    states.append(left_state)
 
-    # Rear wheel points -y (-90 degrees), moving forward
-    rear_state = DriveModuleMeasuredValues(
+    # Right wheel points +x (0 degrees), moving forward -> contributes to CCW rotation
+    right_state = DriveModuleMeasuredValues(
         drive_modules[1].name,
         drive_modules[1].steering_axis_xy_position.x,
         drive_modules[1].steering_axis_xy_position.y,
-        math.radians(-90),
+        math.radians(0),
         0.0, 0.0, 0.0,
         0.5,  # velocity
         0.0, 0.0,
     )
-    states.append(rear_state)
+    states.append(right_state)
 
     motion = controller.body_motion_from_wheel_module_states(states)
 
-    # With wheels at +/-0.5 on x-axis, rotating at v=0.5, omega should be 1.0 rad/s
+    # With wheels at +/-0.5 on y-axis, rotating at v=0.5, omega should be 1.0 rad/s (CCW)
     assert math.isclose(motion.linear_velocity.x, 0.0, rel_tol=1e-6, abs_tol=1e-6)
     assert math.isclose(motion.linear_velocity.y, 0.0, rel_tol=1e-6, abs_tol=1e-6)
     assert math.isclose(motion.angular_velocity.z, 1.0, rel_tol=1e-6, abs_tol=1e-6)
@@ -912,8 +912,8 @@ def test_two_wheel_should_have_sideways_wheels_when_sideways_motion():
 
 
 def test_two_wheel_should_have_angled_wheels_when_pure_rotation():
-    """Test inverse kinematics for 2-wheel: pure rotation results in perpendicular wheel angles."""
-    drive_modules = create_two_wheel_drive_modules(length=1.0)
+    """Test inverse kinematics for 2-wheel: pure rotation results in forward/backward wheel orientations."""
+    drive_modules = create_two_wheel_drive_modules(width=1.0)
     controller = MultiWheelSteeringControlModel(drive_modules)
 
     motion = BodyMotion(
@@ -928,17 +928,17 @@ def test_two_wheel_should_have_angled_wheels_when_pure_rotation():
 
     assert len(proposed_states) == 2
 
-    # Front wheel at (0.5, 0): v_x = 0 - 1.0*0 = 0, v_y = 0 + 1.0*0.5 = 0.5
-    # Wheel should point at 90 degrees with velocity 0.5
-    front_state = proposed_states[0]
-    assert math.isclose(front_state[0].steering_angle_in_radians, math.radians(90), rel_tol=1e-6, abs_tol=1e-15)
-    assert math.isclose(front_state[0].drive_velocity_in_meters_per_second, 0.5, rel_tol=1e-6, abs_tol=1e-15)
+    # Left wheel at (0, 0.5): v_x = 0 - 1.0*0.5 = -0.5, v_y = 0 + 1.0*0 = 0
+    # Wheel should point at 180 degrees (backward) with velocity 0.5
+    left_state = proposed_states[0]
+    assert math.isclose(left_state[0].steering_angle_in_radians, math.radians(180), rel_tol=1e-6, abs_tol=1e-15)
+    assert math.isclose(left_state[0].drive_velocity_in_meters_per_second, 0.5, rel_tol=1e-6, abs_tol=1e-15)
 
-    # Rear wheel at (-0.5, 0): v_x = 0 - 1.0*0 = 0, v_y = 0 + 1.0*(-0.5) = -0.5
-    # Wheel should point at -90 degrees with velocity 0.5
-    rear_state = proposed_states[1]
-    assert math.isclose(rear_state[0].steering_angle_in_radians, math.radians(-90), rel_tol=1e-6, abs_tol=1e-15)
-    assert math.isclose(rear_state[0].drive_velocity_in_meters_per_second, 0.5, rel_tol=1e-6, abs_tol=1e-15)
+    # Right wheel at (0, -0.5): v_x = 0 - 1.0*(-0.5) = 0.5, v_y = 0 + 1.0*0 = 0
+    # Wheel should point at 0 degrees (forward) with velocity 0.5
+    right_state = proposed_states[1]
+    assert math.isclose(right_state[0].steering_angle_in_radians, math.radians(0), rel_tol=1e-6, abs_tol=1e-15)
+    assert math.isclose(right_state[0].drive_velocity_in_meters_per_second, 0.5, rel_tol=1e-6, abs_tol=1e-15)
 
 
 def test_two_wheel_not_move_wheels_when_zero_motion():
