@@ -48,32 +48,29 @@ class SwerveController(Node):
         self.declare_parameter("velocity_controller_name", "velocity_controller")
         self.declare_parameter("cycle_fequency", 50)
 
-        self.declare_parameter("steering_joints", ["joint1", "joint2"])
-        self.declare_parameter("drive_joints", ["joint1", "joint2"])
+        self.declare_parameter("steering_joints", rclpy.Parameter.Type.STRING_ARRAY)
+        self.declare_parameter("drive_joints", rclpy.Parameter.Type.STRING_ARRAY)
 
-        # Robot geometry parameters
-        self.declare_parameter("robot_length", 0.35)
-        self.declare_parameter("robot_width", 0.30)
-        self.declare_parameter("steering_radius", 0.05)
-        self.declare_parameter("wheel_radius", 0.04)
-        self.declare_parameter("wheel_width", 0.05)
+        # Robot geometry parameters (no defaults - must be specified in config)
+        self.declare_parameter("robot_length", rclpy.Parameter.Type.DOUBLE)
+        self.declare_parameter("robot_width", rclpy.Parameter.Type.DOUBLE)
+        self.declare_parameter("steering_radius", rclpy.Parameter.Type.DOUBLE)
+        self.declare_parameter("wheel_radius", rclpy.Parameter.Type.DOUBLE)
+        self.declare_parameter("wheel_width", rclpy.Parameter.Type.DOUBLE)
 
-        # Motor constraint parameters
-        self.declare_parameter("steering_motor_max_velocity", 10.0)
-        self.declare_parameter("steering_motor_min_acceleration", 0.1)
-        self.declare_parameter("steering_motor_max_acceleration", 1.0)
-        self.declare_parameter("drive_motor_max_velocity", 10.0)
-        self.declare_parameter("drive_motor_min_acceleration", 0.1)
-        self.declare_parameter("drive_motor_max_acceleration", 1.0)
+        # Motor constraint parameters (no defaults - must be specified in config)
+        self.declare_parameter("steering_motor_max_velocity", rclpy.Parameter.Type.DOUBLE)
+        self.declare_parameter("steering_motor_min_acceleration", rclpy.Parameter.Type.DOUBLE)
+        self.declare_parameter("steering_motor_max_acceleration", rclpy.Parameter.Type.DOUBLE)
+        self.declare_parameter("drive_motor_max_velocity", rclpy.Parameter.Type.DOUBLE)
+        self.declare_parameter("drive_motor_min_acceleration", rclpy.Parameter.Type.DOUBLE)
+        self.declare_parameter("drive_motor_max_acceleration", rclpy.Parameter.Type.DOUBLE)
 
-        # Module configuration - names and positions
-        # Default: 4-wheel configuration (left_front, left_rear, right_rear, right_front)
-        # For 2-wheel: use ["front", "rear"] with positions along x-axis
-        self.declare_parameter("module_names", ["left_front", "left_rear", "right_rear", "right_front"])
-        # Default positions for 4-wheel (calculated from robot_length/width)
-        # These are relative to robot center
-        self.declare_parameter("module_positions_x", [0.125, -0.125, -0.125, 0.125])
-        self.declare_parameter("module_positions_y", [0.125, 0.125, -0.125, -0.125])
+        # Module configuration - names and positions (no defaults - must be specified in config)
+        self.declare_parameter("module_names", rclpy.Parameter.Type.STRING_ARRAY)
+        # Module positions relative to robot center (meters)
+        self.declare_parameter("module_positions_x", rclpy.Parameter.Type.DOUBLE_ARRAY)
+        self.declare_parameter("module_positions_y", rclpy.Parameter.Type.DOUBLE_ARRAY)
 
         self.get_logger().info(f'Initializing swerve controller ...')
 
