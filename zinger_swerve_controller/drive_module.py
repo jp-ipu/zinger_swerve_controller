@@ -26,9 +26,11 @@ class DriveModule(object):
         steering_motor_maximum_velocity: float,
         steering_motor_minimum_acceleration: float,
         steering_motor_maximum_acceleration: float,
+        steering_motor_maximum_jerk: float,
         drive_motor_maximum_velocity: float,
         drive_motor_minimum_acceleration: float,
-        drive_motor_maximum_acceleration: float):
+        drive_motor_maximum_acceleration: float,
+        drive_motor_maximum_jerk: float):
 
         self.name = name
 
@@ -40,15 +42,17 @@ class DriveModule(object):
         self.wheel_radius = wheel_radius
         self.wheel_width = wheel_width
 
+        # Steering motor constraints
         self.steering_motor_maximum_velocity = steering_motor_maximum_velocity
-
         self.steering_motor_minimum_acceleration = steering_motor_minimum_acceleration
         self.steering_motor_maximum_acceleration = steering_motor_maximum_acceleration
+        self.steering_motor_maximum_jerk = steering_motor_maximum_jerk
 
+        # Drive motor constraints
         self.drive_motor_maximum_velocity = drive_motor_maximum_velocity
-
         self.drive_motor_minimum_acceleration = drive_motor_minimum_acceleration
         self.drive_motor_maximum_acceleration = drive_motor_maximum_acceleration
+        self.drive_motor_maximum_jerk = drive_motor_maximum_jerk
 
     # Motors
     # Wheel

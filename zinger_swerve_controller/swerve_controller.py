@@ -33,7 +33,8 @@ from tf_transformations import quaternion_from_euler
 from .control import BodyMotionCommand
 from .drive_module import DriveModule
 from .geometry import Point
-from .profile import SingleVariableLinearProfile, SingleVariableSCurveProfile, TransientVariableProfile
+from .profile import SingleVariableLinearProfile, TransientVariableProfile
+from .ruckig_velocity_controller import RuckigVelocityController, VelocityState
 from .states import DriveModuleMeasuredValues
 from .steering_controller import DriveModuleDesiredValuesProfilePoint, ModuleFollowsBodySteeringController
 
@@ -62,9 +63,11 @@ class SwerveController(Node):
         self.declare_parameter("steering_motor_max_velocity", 10.0)
         self.declare_parameter("steering_motor_min_acceleration", 0.1)
         self.declare_parameter("steering_motor_max_acceleration", 1.0)
+        self.declare_parameter("steering_motor_max_jerk", 100.0)
         self.declare_parameter("drive_motor_max_velocity", 10.0)
         self.declare_parameter("drive_motor_min_acceleration", 0.1)
         self.declare_parameter("drive_motor_max_acceleration", 1.0)
+        self.declare_parameter("drive_motor_max_jerk", 100.0)
 
         # Module configuration - names and positions
         # Default: 4-wheel configuration (left_front, left_rear, right_rear, right_front)
@@ -152,7 +155,43 @@ class SwerveController(Node):
         # registered
         self.get_logger().info(f'Storing drive module information...')
         self.drive_modules = self.get_drive_modules()
+
+        # Store motor constraints for use by motion profiles
+        self.drive_motor_constraints = {
+            'max_velocity': self.get_parameter("drive_motor_max_velocity").value,
+            'max_acceleration': self.get_parameter("drive_motor_max_acceleration").value,
+            'max_jerk': self.get_parameter("drive_motor_max_jerk").value,
+        }
+        self.steering_motor_constraints = {
+            'max_velocity': self.get_parameter("steering_motor_max_velocity").value,
+            'max_acceleration': self.get_parameter("steering_motor_max_acceleration").value,
+            'max_jerk': self.get_parameter("steering_motor_max_jerk").value,
+        }
+
         self.controller = ModuleFollowsBodySteeringController(self.drive_modules, self.get_motion_profile, self.write_log)
+
+        # Create online velocity controller for smooth body velocity transitions
+        # Uses Ruckig for time-optimal trajectory generation respecting acceleration/jerk limits
+        cycle_frequency = self.get_parameter("cycle_frequency").value
+        self.velocity_controller = RuckigVelocityController(
+            control_cycle=1.0 / cycle_frequency,
+            max_acceleration=[
+                self.drive_motor_constraints['max_acceleration'],  # linear_x
+                self.drive_motor_constraints['max_acceleration'],  # linear_y
+                self.steering_motor_constraints['max_acceleration'],  # angular_z
+            ],
+            max_jerk=[
+                self.drive_motor_constraints['max_jerk'],  # linear_x
+                self.drive_motor_constraints['max_jerk'],  # linear_y
+                self.steering_motor_constraints['max_jerk'],  # angular_z
+            ],
+            max_velocity=[
+                self.drive_motor_constraints['max_velocity'],  # linear_x
+                self.drive_motor_constraints['max_velocity'],  # linear_y
+                self.steering_motor_constraints['max_velocity'],  # angular_z (rotation rate)
+            ],
+            logger=lambda msg: self.get_logger().debug(msg)
+        )
 
         # initialize the time tracking variables after we get the controller up and running
         # so that we can initialize the controller at the same time.
@@ -233,20 +272,14 @@ class SwerveController(Node):
             f'Received a Twist message that is different from the last command. Processing message: "{msg}"'
         )
 
-        # When we get a stream of command it is possible that each command is slightly different (looking at you ROS2 nav)
-        # This means we reset the starting time of the change profile each time, which starts the process all over
-        # Because we don't take the current steering velocity / drive acceleration into account we assume that we
-        # start from rest. That is wrong. We should be starting from a place where we have the current
-        # steering velocity / drive acceleration.
-
-        self.store_time_and_update_controller_time()
-        self.controller.on_desired_state_update(
-            BodyMotionCommand(
-                1.0, # THIS SHOULD REALLY BE CALCULATED SOME HOW
-                msg.linear.x,
-                msg.linear.y,
-                msg.angular.z
-            )
+        # Set the new target velocity in the online Ruckig controller.
+        # The controller will smoothly transition to this velocity while respecting
+        # acceleration and jerk limits. The actual velocity command is generated
+        # in the timer callback via velocity_controller.update().
+        self.velocity_controller.set_target_velocity(
+            linear_x=msg.linear.x,
+            linear_y=msg.linear.y,
+            angular_z=msg.angular.z
         )
 
         self.last_velocity_command = msg
@@ -268,9 +301,11 @@ class SwerveController(Node):
         steering_max_velocity = self.get_parameter("steering_motor_max_velocity").value
         steering_min_acceleration = self.get_parameter("steering_motor_min_acceleration").value
         steering_max_acceleration = self.get_parameter("steering_motor_max_acceleration").value
+        steering_max_jerk = self.get_parameter("steering_motor_max_jerk").value
         drive_max_velocity = self.get_parameter("drive_motor_max_velocity").value
         drive_min_acceleration = self.get_parameter("drive_motor_min_acceleration").value
         drive_max_acceleration = self.get_parameter("drive_motor_max_acceleration").value
+        drive_max_jerk = self.get_parameter("drive_motor_max_jerk").value
 
         # Store the steering joints
         steering_joint_names = self.get_parameter("steering_joints").value
@@ -342,9 +377,11 @@ class SwerveController(Node):
                 steering_motor_maximum_velocity=steering_max_velocity,
                 steering_motor_minimum_acceleration=steering_min_acceleration,
                 steering_motor_maximum_acceleration=steering_max_acceleration,
+                steering_motor_maximum_jerk=steering_max_jerk,
                 drive_motor_maximum_velocity=drive_max_velocity,
                 drive_motor_minimum_acceleration=drive_min_acceleration,
-                drive_motor_maximum_acceleration=drive_max_acceleration
+                drive_motor_maximum_acceleration=drive_max_acceleration,
+                drive_motor_maximum_jerk=drive_max_jerk
             )
             drive_modules.append(module)
 
@@ -358,8 +395,9 @@ class SwerveController(Node):
         return drive_modules
 
     def get_motion_profile(self, start: float, end: float) -> TransientVariableProfile:
-        # return SingleVariableSCurveProfile(start, end)
-
+        # Use a simple linear profile for the steering controller's internal trajectory.
+        # The online RuckigVelocityController handles the smooth body velocity transitions,
+        # so this profile just interpolates between states.
         return SingleVariableLinearProfile(start, end)
 
     def initialize_drive_module_states(self, drive_modules: List[DriveModule]) -> List[DriveModuleMeasuredValues]:
@@ -525,33 +563,22 @@ class SwerveController(Node):
         # always send out the odometry information
         self.publish_odometry()
 
-        # Check if we actually have a movement profile to send
-        current_time = self.get_clock().now()
-        trajectory_running_duration: TimeDuration = current_time - self.last_velocity_command_received_at
-        # self.get_logger().debug(
-        #     'Current trajectory duration {} s. Based on current time {} and sequence start time {}'.format(
-        #         trajectory_running_duration,
-        #         current_time,
-        #         self.last_velocity_command_received_at
-        #     )
-        # )
+        # Get the smoothed velocity from the online Ruckig controller.
+        # This generates a time-optimal trajectory that respects acceleration/jerk limits.
+        smoothed_velocity = self.velocity_controller.update()
 
-        running_duration_as_float: float = trajectory_running_duration.nanoseconds * 1e-9
-        # self.get_logger().debug(
-        #     'Current trajectory duration {} s'.format(running_duration_as_float)
-        # )
+        # Update the steering controller with the current smoothed velocity command.
+        # This replaces the old offline trajectory-based approach with a reactive online approach.
+        self.controller.on_desired_state_update(
+            BodyMotionCommand(
+                0.0,  # time_for_motion - not used in immediate mode
+                smoothed_velocity.linear_x,
+                smoothed_velocity.linear_y,
+                smoothed_velocity.angular_z
+            )
+        )
 
-        if running_duration_as_float > self.controller.min_time_for_profile:
-            # self.get_logger().debug(
-            #     'Trajectory completed waiting for next command.'
-            # )
-            return
-
-        next_time_step = current_time.nanoseconds * 1e-9 + 1.0 / self.cycle_time_in_hertz
-        # self.get_logger().debug(
-        #     'Calculating next step in profile at time {} s'.format(next_time_step)
-        # )
-
+        next_time_step = self.get_clock().now().nanoseconds * 1e-9 + 1.0 / self.cycle_time_in_hertz
         drive_module_states = self.controller.drive_module_state_at_future_time(next_time_step)
 
         # Only publish movement commands if there is a trajectory

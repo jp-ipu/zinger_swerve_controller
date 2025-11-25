@@ -21,9 +21,11 @@ swerve_controller:
     steering_motor_max_velocity: 10.0      # rad/s
     steering_motor_min_acceleration: 0.1   # rad/s^2
     steering_motor_max_acceleration: 1.0   # rad/s^2
+    steering_motor_max_jerk: 100.0         # rad/s^3
     drive_motor_max_velocity: 10.0         # m/s
     drive_motor_min_acceleration: 0.1      # m/s^2
     drive_motor_max_acceleration: 1.0      # m/s^2
+    drive_motor_max_jerk: 100.0            # m/s^3
 
     # ===========================================
     # 2-WHEEL CONFIGURATION

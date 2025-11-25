@@ -15,6 +15,9 @@
   <depend>trajectory_msgs</depend>
   <depend>tf_transformations</depend>
 
+  <!-- Trajectory generation -->
+  <exec_depend>python3-ruckig</exec_depend>
+
   <!-- test dependencies -->
   <test_depend>ament_copyright</test_depend>
   <test_depend>python3-pytest</test_depend>

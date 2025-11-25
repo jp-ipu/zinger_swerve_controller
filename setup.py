@@ -16,7 +16,7 @@ setup(
         # Include all the config files
         (os.path.join('share', package_name, 'config'), glob(os.path.join('config', '*.yaml'))),
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'ruckig'],
     zip_safe=True,
     maintainer='petrik',
     maintainer_email='petrikvandervelde@gmail.com',
