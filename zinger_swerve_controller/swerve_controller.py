@@ -46,7 +46,7 @@ class SwerveController(Node):
 
         self.declare_parameter("position_controller_name", "position_controller")
         self.declare_parameter("velocity_controller_name", "velocity_controller")
-        self.declare_parameter("cycle_fequency", 50)
+        self.declare_parameter("cycle_frequency", 50)
 
         self.declare_parameter("steering_joints", ["joint1", "joint2"])
         self.declare_parameter("drive_joints", ["joint1", "joint2"])
@@ -83,7 +83,7 @@ class SwerveController(Node):
 
         # publish the module steering angle
         position_controller_name = self.get_parameter("position_controller_name").value
-        steering_angle_publish_topic = "/" + position_controller_name + "/" + "commands"
+        steering_angle_publish_topic = position_controller_name + "/" + "commands"
         self.drive_module_steering_angle_publisher = self.create_publisher(
             Float64MultiArray,
             steering_angle_publish_topic,
@@ -99,7 +99,7 @@ class SwerveController(Node):
 
         # publish the module drive velocity
         velocity_controller_name = self.get_parameter("velocity_controller_name").value
-        velocity_publish_topic = "/" + velocity_controller_name + "/" + "commands"
+        velocity_publish_topic = velocity_controller_name + "/" + "commands"
         self.drive_module_velocity_publisher = self.create_publisher(
             Float64MultiArray,
             velocity_publish_topic,
@@ -164,9 +164,9 @@ class SwerveController(Node):
         self.last_position_msg: Float64MultiArray = None
 
         # Create the timer that is used to ensure that we publish movement data regularly
-        self.cycle_time_in_hertz = self.get_parameter("cycle_fequency").value
+        self.cycle_time_in_hertz = self.get_parameter("cycle_frequency").value
         self.get_logger().info(
-            f'Publishing changes at fequency: "{self.cycle_time_in_hertz}" Hz'
+            f'Publishing changes at frequency: "{self.cycle_time_in_hertz}" Hz'
         )
 
         self.timer = self.create_timer(
