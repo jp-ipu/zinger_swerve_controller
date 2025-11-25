@@ -507,10 +507,14 @@ class SwerveController(Node):
                 #     f' velocity: "{value.drive_velocity_in_module_coordinates.x}" ] '
                 # )
 
-        # Ideally we would get the time from the message. And then check if we have gotten a more
-        # recent message
+        # Use the message timestamp for accurate odometry integration
+        # This accounts for sensor latency and message delivery delays
         self.store_time_and_update_controller_time()
-        self.controller.on_state_update(measured_drive_states)
+
+        # Convert message timestamp to seconds for odometry integration
+        measurement_time_seconds = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+
+        self.controller.on_state_update(measured_drive_states, measurement_time_seconds)
         self.last_drive_module_state = measured_drive_states
 
     def publish_odometry(self):

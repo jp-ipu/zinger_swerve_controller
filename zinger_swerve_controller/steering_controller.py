@@ -341,12 +341,28 @@ class ModuleFollowsBodySteeringController():
         self.min_time_for_profile = desired_motion.time_for_motion()
 
     # Updates the currently stored drive module state
-    def on_state_update(self, current_module_states: List[DriveModuleMeasuredValues]):
+    def on_state_update(
+            self,
+            current_module_states: List[DriveModuleMeasuredValues],
+            measurement_time_in_seconds: float = None):
+        """
+        Update odometry based on new wheel state measurements.
+
+        Args:
+            current_module_states: Current measured state of each drive module
+            measurement_time_in_seconds: Timestamp when the measurement was taken.
+                If None, uses current_time_in_seconds (less accurate due to latency).
+                For best accuracy, pass the timestamp from the sensor message header.
+        """
         if current_module_states is None:
             raise TypeError()
 
         if len(current_module_states) != len(self.modules):
             raise ValueError()
+
+        # Use measurement timestamp if provided, otherwise fall back to current time
+        if measurement_time_in_seconds is None:
+            measurement_time_in_seconds = self.current_time_in_seconds
 
         self.previous_module_states = self.module_states
         self.module_states = current_module_states
@@ -354,7 +370,9 @@ class ModuleFollowsBodySteeringController():
         # Calculate the current body motion from wheel states (forward kinematics)
         body_motion = self.control_model.body_motion_from_wheel_module_states(self.module_states)
 
-        time_step_in_seconds = self.current_time_in_seconds - self.last_state_update_time
+        # Compute dt using measurement timestamps for accurate integration
+        # This accounts for sensor latency and message delivery delays
+        time_step_in_seconds = measurement_time_in_seconds - self.last_state_update_time
 
         # Use trapezoidal integration for velocities (average of old and new)
         avg_vx = 0.5 * (self.body_state.motion_in_body_coordinates.linear_velocity.x + body_motion.linear_velocity.x)
@@ -407,7 +425,7 @@ class ModuleFollowsBodySteeringController():
             orientation_jerk
         )
 
-        self.last_state_update_time = self.current_time_in_seconds
+        self.last_state_update_time = measurement_time_in_seconds
 
     def _integrate_odometry_arc(
             self,
