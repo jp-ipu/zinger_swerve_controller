@@ -1051,9 +1051,11 @@ def test_drive_module_steering_limits_custom():
         steering_motor_maximum_velocity=1.0,
         steering_motor_minimum_acceleration=0.1,
         steering_motor_maximum_acceleration=1.0,
+        steering_motor_maximum_jerk=100.0,
         drive_motor_maximum_velocity=1.0,
         drive_motor_minimum_acceleration=0.1,
         drive_motor_maximum_acceleration=1.0,
+        drive_motor_maximum_jerk=100.0,
         steering_angle_min=-limit,
         steering_angle_max=limit
     )
@@ -1085,9 +1087,11 @@ def test_drive_module_steering_limits_infinity_always_reachable():
         steering_motor_maximum_velocity=1.0,
         steering_motor_minimum_acceleration=0.1,
         steering_motor_maximum_acceleration=1.0,
+        steering_motor_maximum_jerk=100.0,
         drive_motor_maximum_velocity=1.0,
         drive_motor_minimum_acceleration=0.1,
         drive_motor_maximum_acceleration=1.0,
+        drive_motor_maximum_jerk=100.0,
         steering_angle_min=-limit,
         steering_angle_max=limit
     )
