@@ -25,6 +25,12 @@ swerve_controller:
     drive_motor_min_acceleration: 0.1      # m/s^2
     drive_motor_max_acceleration: 1.0      # m/s^2
 
+    # Steering angle limits (radians)
+    # Default: full rotation (-pi to pi)
+    # Example for +/- 125 degrees: -2.18 to 2.18
+    steering_angle_min: -3.14159           # -180 degrees
+    steering_angle_max: 3.14159            # +180 degrees
+
     # ===========================================
     # 4-WHEEL CONFIGURATION (default)
     # ===========================================

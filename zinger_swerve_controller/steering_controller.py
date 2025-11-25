@@ -112,139 +112,131 @@ class ModuleFollowsBodySteeringController():
     def drive_module_states_at_current_time(self) -> List[DriveModuleMeasuredValues]:
         return self.module_states
 
-    def drive_module_state_at_profile_time(self, time_fraction: float) -> List[DriveModuleDesiredValues]:
-        # self.logger(
-        #     'Determining profile values at time fraction {}'.format(time_fraction)
-        # )
+    def _select_best_steering_state(
+        self,
+        module: 'DriveModule',
+        current_steering_angle: float,
+        current_velocity: float,
+        forward_state: DriveModuleDesiredValues,
+        reverse_state: DriveModuleDesiredValues
+    ) -> DriveModuleDesiredValues:
+        """
+        Select the best steering state considering angle limits and minimizing rotation.
 
+        Args:
+            module: The drive module (contains steering limits)
+            current_steering_angle: Current steering angle in radians
+            current_velocity: Current drive velocity in m/s
+            forward_state: Forward direction option
+            reverse_state: Reverse direction option (angle + 180°, negative velocity)
+
+        Returns:
+            The best DriveModuleDesiredValues to use
+        """
+        # Check which states are reachable within steering limits
+        forward_reachable = module.is_steering_angle_reachable(forward_state.steering_angle_in_radians)
+        reverse_reachable = module.is_steering_angle_reachable(reverse_state.steering_angle_in_radians)
+
+        # If neither is reachable, clamp to the nearest limit
+        if not forward_reachable and not reverse_reachable:
+            # Find which state is closer to the limits
+            forward_angle = forward_state.steering_angle_in_radians
+            reverse_angle = reverse_state.steering_angle_in_radians
+
+            if not math.isinf(forward_angle):
+                # Clamp forward angle to limits
+                clamped_forward = max(module.steering_angle_min,
+                                     min(module.steering_angle_max, forward_angle))
+                forward_distance = abs(difference_between_angles(current_steering_angle, clamped_forward))
+            else:
+                forward_distance = 0  # No steering change needed
+
+            if not math.isinf(reverse_angle):
+                clamped_reverse = max(module.steering_angle_min,
+                                     min(module.steering_angle_max, reverse_angle))
+                reverse_distance = abs(difference_between_angles(current_steering_angle, clamped_reverse))
+            else:
+                reverse_distance = 0
+
+            # Return the state with clamped angle that's closest
+            if forward_distance <= reverse_distance:
+                if not math.isinf(forward_angle):
+                    clamped_angle = max(module.steering_angle_min,
+                                       min(module.steering_angle_max, forward_angle))
+                    return DriveModuleDesiredValues(
+                        forward_state.name,
+                        clamped_angle,
+                        forward_state.drive_velocity_in_meters_per_second
+                    )
+                return forward_state
+            else:
+                if not math.isinf(reverse_angle):
+                    clamped_angle = max(module.steering_angle_min,
+                                       min(module.steering_angle_max, reverse_angle))
+                    return DriveModuleDesiredValues(
+                        reverse_state.name,
+                        clamped_angle,
+                        reverse_state.drive_velocity_in_meters_per_second
+                    )
+                return reverse_state
+
+        # If only one is reachable, use that one
+        if forward_reachable and not reverse_reachable:
+            return forward_state
+        if reverse_reachable and not forward_reachable:
+            return reverse_state
+
+        # Both are reachable - use original logic to pick the best one
+        forward_rotation_diff = difference_between_angles(
+            current_steering_angle, forward_state.steering_angle_in_radians)
+        reverse_rotation_diff = difference_between_angles(
+            current_steering_angle, reverse_state.steering_angle_in_radians)
+
+        forward_velocity_diff = forward_state.drive_velocity_in_meters_per_second - current_velocity
+        reverse_velocity_diff = reverse_state.drive_velocity_in_meters_per_second - current_velocity
+
+        # Pick the state with smallest rotation, using velocity as tiebreaker
+        if abs(forward_rotation_diff) <= abs(reverse_rotation_diff):
+            if abs(forward_velocity_diff) <= abs(reverse_velocity_diff):
+                return forward_state
+            else:
+                if math.isclose(abs(forward_rotation_diff), abs(reverse_rotation_diff),
+                               rel_tol=1e-7, abs_tol=1e-7):
+                    return reverse_state
+                else:
+                    return forward_state
+        else:
+            if abs(reverse_velocity_diff) <= abs(forward_velocity_diff):
+                return reverse_state
+            else:
+                if math.isclose(abs(forward_rotation_diff), abs(reverse_rotation_diff),
+                               rel_tol=1e-7, abs_tol=1e-7):
+                    return forward_state
+                else:
+                    return reverse_state
+
+    def drive_module_state_at_profile_time(self, time_fraction: float) -> List[DriveModuleDesiredValues]:
         result: List[DriveModuleDesiredValues] = []
         if self.is_executing_body_profile:
             body_state = self.body_profile.body_motion_at(time_fraction)
             drive_module_desired_values = self.control_model.state_of_wheel_modules_from_body_motion(body_state)
             for i in range(len(self.modules)):
-                # Wheels are moving. We don't know what kind of movement yet though, so figure out if:
-                # - The wheel are moving at some significant velocity, in that case pick the state that most
-                #   closely matches the current state, i.e. match the drive velocity and the steering angle as
-                #   close as possible
-                # - The wheel is moving slowly, in that case we may just be close to the moment where the wheel
-                #   stops moving (either just before it does that, or just after). This is where we could potentially
-                #   flip directions (or we might just have flipped directions)
-                #   - If we have just flipped directions then we should probably continue in the same way (but maybe not)
-
-                #previous_state_for_module = self.previous_module_states[i]
-
                 current_state_for_module = self.module_states[i]
                 current_steering_angle = current_state_for_module.orientation_in_body_coordinates.z
                 current_velocity = current_state_for_module.drive_velocity_in_module_coordinates.x
 
-                #previous_rotation_difference = current_steering_angle - previous_state_for_module.orientation_in_body_coordinates.z
-                #previous_velocity_difference = current_velocity - previous_state_for_module.drive_velocity_in_module_coordinates.x
-
                 states_for_module = drive_module_desired_values[i]
+                forward_state = states_for_module[0]
+                reverse_state = states_for_module[1]
 
-                first_state_rotation_difference = difference_between_angles(current_steering_angle, states_for_module[0].steering_angle_in_radians)
-                second_state_rotation_difference = difference_between_angles(current_steering_angle, states_for_module[1].steering_angle_in_radians)
-
-                first_state_velocity_difference = states_for_module[0].drive_velocity_in_meters_per_second - current_velocity
-                second_state_velocity_difference = states_for_module[1].drive_velocity_in_meters_per_second - current_velocity
-
-                # Possibilities:
-                # - first velocity change and first orientation change are the smallest -> pick the first state
-                # - second velocity change and second orientation change are the smallest -> pick the second state
-                # - first velocity change is larger and second orientation change is larger -> Bad state. Pick the one with the least relative change?
-
-                if abs(first_state_rotation_difference) <= abs(second_state_rotation_difference):
-                    if abs(first_state_velocity_difference) <= abs(second_state_velocity_difference):
-                        # first rotation and velocity change are the smallest, so take the first state
-                        result.append(states_for_module[0])
-                        # self.logger(
-                        #     'module: {} - current state [{} rad, {} m/s]. Options - 1) [{} rad, {} m/s] - 2) [{} rad, {} m/s]. Selected option 1'.format(
-                        #         self.modules[i].name,
-                        #         current_steering_angle,
-                        #         current_velocity,
-                        #         states_for_module[0].steering_angle_in_radians,
-                        #         states_for_module[0].drive_velocity_in_meters_per_second,
-                        #         states_for_module[1].steering_angle_in_radians,
-                        #         states_for_module[1].drive_velocity_in_meters_per_second
-                        #     )
-                        # )
-                    else:
-                        if math.isclose(abs(first_state_rotation_difference), abs(second_state_rotation_difference), rel_tol=1e-7, abs_tol=1e-7):
-                            # first rotation is equal to the second rotation
-                            # first velocity larger than the second velocity.
-                            # pick the second state
-                            result.append(states_for_module[1])
-                            # self.logger(
-                            #     'module: {} - current state [{} rad, {} m/s]. Options - 1) [{} rad, {} m/s] - 2) [{} rad, {} m/s]. Selected option 2'.format(
-                            #         self.modules[i].name,
-                            #         current_steering_angle,
-                            #         current_velocity,
-                            #         states_for_module[0].steering_angle_in_radians,
-                            #         states_for_module[0].drive_velocity_in_meters_per_second,
-                            #         states_for_module[1].steering_angle_in_radians,
-                            #         states_for_module[1].drive_velocity_in_meters_per_second
-                            #     )
-                            # )
-                        else:
-                            # first rotation is the smallest but second velocity is the smallest
-                            result.append(states_for_module[0])
-                            # self.logger(
-                            #     'module: {} - current state [{} rad, {} m/s]. Options - 1) [{} rad, {} m/s] - 2) [{} rad, {} m/s]. Selected option 1'.format(
-                            #         self.modules[i].name,
-                            #         current_steering_angle,
-                            #         current_velocity,
-                            #         states_for_module[0].steering_angle_in_radians,
-                            #         states_for_module[0].drive_velocity_in_meters_per_second,
-                            #         states_for_module[1].steering_angle_in_radians,
-                            #         states_for_module[1].drive_velocity_in_meters_per_second
-                            #     )
-                            # )
-                else:
-                    if abs(second_state_velocity_difference) <= abs(first_state_velocity_difference):
-                        # second rotation and velocity change are the smallest, so take the second state
-                        result.append(states_for_module[1])
-                        # self.logger(
-                        #     'module: {} - current state [{} rad, {} m/s]. Options - 1) [{} rad, {} m/s] - 2) [{} rad, {} m/s]. Selected option 2'.format(
-                        #         self.modules[i].name,
-                        #         current_steering_angle,
-                        #         current_velocity,
-                        #         states_for_module[0].steering_angle_in_radians,
-                        #         states_for_module[0].drive_velocity_in_meters_per_second,
-                        #         states_for_module[1].steering_angle_in_radians,
-                        #         states_for_module[1].drive_velocity_in_meters_per_second
-                        #     )
-                        # )
-                    else:
-                        if math.isclose(abs(first_state_rotation_difference), abs(second_state_rotation_difference), rel_tol=1e-7, abs_tol=1e-7):
-                            # second rotation is equal to the first rotation
-                            # second velocity larger than the first velocity.
-                            # pick the first state
-                            result.append(states_for_module[0])
-                            # self.logger(
-                            #     'module: {} - current state [{} rad, {} m/s]. Options - 1) [{} rad, {} m/s] - 2) [{} rad, {} m/s]. Selected option 1'.format(
-                            #         self.modules[i].name,
-                            #         current_steering_angle,
-                            #         current_velocity,
-                            #         states_for_module[0].steering_angle_in_radians,
-                            #         states_for_module[0].drive_velocity_in_meters_per_second,
-                            #         states_for_module[1].steering_angle_in_radians,
-                            #         states_for_module[1].drive_velocity_in_meters_per_second
-                            #     )
-                            # )
-                        else:
-                            # second rotation is the smallest but first velocity is the smallest
-                            result.append(states_for_module[1])
-                            # self.logger(
-                            #     'module: {} - current state [{} rad, {} m/s]. Options - 1) [{} rad, {} m/s] - 2) [{} rad, {} m/s]. Selected option 2'.format(
-                            #         self.modules[i].name,
-                            #         current_steering_angle,
-                            #         current_velocity,
-                            #         states_for_module[0].steering_angle_in_radians,
-                            #         states_for_module[0].drive_velocity_in_meters_per_second,
-                            #         states_for_module[1].steering_angle_in_radians,
-                            #         states_for_module[1].drive_velocity_in_meters_per_second
-                            #     )
-                            # )
+                selected_state = self._select_best_steering_state(
+                    self.modules[i],
+                    current_steering_angle,
+                    current_velocity,
+                    forward_state,
+                    reverse_state
+                )
+                result.append(selected_state)
         else:
             for drive_module in self.modules:
                 state = self.module_profile_from_command.value_for_module_at(drive_module.name, time_fraction)

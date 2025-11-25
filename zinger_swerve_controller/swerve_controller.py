@@ -66,6 +66,12 @@ class SwerveController(Node):
         self.declare_parameter("drive_motor_min_acceleration", 0.1)
         self.declare_parameter("drive_motor_max_acceleration", 1.0)
 
+        # Steering angle limits (radians) - default is no limit (full rotation)
+        # Use these to constrain steering if your hardware has rotation limits
+        # e.g., -2.18 to 2.18 for +/- 125 degrees
+        self.declare_parameter("steering_angle_min", -3.14159)
+        self.declare_parameter("steering_angle_max", 3.14159)
+
         # Module configuration - names and positions
         # Default: 4-wheel configuration (left_front, left_rear, right_rear, right_front)
         # For 2-wheel: use ["front", "rear"] with positions along x-axis
@@ -272,6 +278,10 @@ class SwerveController(Node):
         drive_min_acceleration = self.get_parameter("drive_motor_min_acceleration").value
         drive_max_acceleration = self.get_parameter("drive_motor_max_acceleration").value
 
+        # Get steering angle limits
+        steering_angle_min = self.get_parameter("steering_angle_min").value
+        steering_angle_max = self.get_parameter("steering_angle_max").value
+
         # Store the steering joints
         steering_joint_names = self.get_parameter("steering_joints").value
         steering_joints = []
@@ -344,7 +354,9 @@ class SwerveController(Node):
                 steering_motor_maximum_acceleration=steering_max_acceleration,
                 drive_motor_maximum_velocity=drive_max_velocity,
                 drive_motor_minimum_acceleration=drive_min_acceleration,
-                drive_motor_maximum_acceleration=drive_max_acceleration
+                drive_motor_maximum_acceleration=drive_max_acceleration,
+                steering_angle_min=steering_angle_min,
+                steering_angle_max=steering_angle_max
             )
             drive_modules.append(module)
 

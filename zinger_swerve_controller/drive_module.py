@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+
 # local
 from .geometry import Point
 
@@ -28,7 +30,9 @@ class DriveModule(object):
         steering_motor_maximum_acceleration: float,
         drive_motor_maximum_velocity: float,
         drive_motor_minimum_acceleration: float,
-        drive_motor_maximum_acceleration: float):
+        drive_motor_maximum_acceleration: float,
+        steering_angle_min: float = -math.pi,
+        steering_angle_max: float = math.pi):
 
         self.name = name
 
@@ -49,6 +53,16 @@ class DriveModule(object):
 
         self.drive_motor_minimum_acceleration = drive_motor_minimum_acceleration
         self.drive_motor_maximum_acceleration = drive_motor_maximum_acceleration
+
+        # Steering angle limits (radians)
+        self.steering_angle_min = steering_angle_min
+        self.steering_angle_max = steering_angle_max
+
+    def is_steering_angle_reachable(self, angle: float) -> bool:
+        """Check if the given steering angle is within the module's limits."""
+        if math.isinf(angle):
+            return True  # Infinity means no steering change needed
+        return self.steering_angle_min <= angle <= self.steering_angle_max
 
     # Motors
     # Wheel

@@ -995,3 +995,83 @@ def test_backward_compatible_alias():
     proposed_states = controller.state_of_wheel_modules_from_body_motion(motion)
 
     assert len(proposed_states) == 4
+
+
+# =============================================================================
+# STEERING ANGLE LIMITS TESTS
+# =============================================================================
+
+def test_drive_module_steering_limits_default_full_rotation():
+    """Test that default steering limits allow full rotation."""
+    module = create_drive_module("test", 0.0, 0.5)
+
+    # Default limits are -pi to pi
+    assert module.steering_angle_min == -math.pi
+    assert module.steering_angle_max == math.pi
+
+    # All angles within -pi to pi should be reachable
+    assert module.is_steering_angle_reachable(0.0)
+    assert module.is_steering_angle_reachable(math.pi / 2)
+    assert module.is_steering_angle_reachable(-math.pi / 2)
+    assert module.is_steering_angle_reachable(math.pi)
+    assert module.is_steering_angle_reachable(-math.pi)
+
+
+def test_drive_module_steering_limits_custom():
+    """Test that custom steering limits work correctly."""
+    # +/- 125 degrees = +/- 2.18 radians
+    limit = math.radians(125)
+    module = DriveModule(
+        name="limited",
+        steering_link="steering_limited",
+        drive_link="drive_limited",
+        steering_axis_xy_position=Point(0.0, 0.5, 0.0),
+        wheel_radius=0.1,
+        wheel_width=0.05,
+        steering_motor_maximum_velocity=1.0,
+        steering_motor_minimum_acceleration=0.1,
+        steering_motor_maximum_acceleration=1.0,
+        drive_motor_maximum_velocity=1.0,
+        drive_motor_minimum_acceleration=0.1,
+        drive_motor_maximum_acceleration=1.0,
+        steering_angle_min=-limit,
+        steering_angle_max=limit
+    )
+
+    # Angles within limits should be reachable
+    assert module.is_steering_angle_reachable(0.0)
+    assert module.is_steering_angle_reachable(math.radians(90))
+    assert module.is_steering_angle_reachable(math.radians(-90))
+    assert module.is_steering_angle_reachable(math.radians(120))
+    assert module.is_steering_angle_reachable(math.radians(-120))
+
+    # Angles outside limits should not be reachable
+    assert not module.is_steering_angle_reachable(math.radians(130))
+    assert not module.is_steering_angle_reachable(math.radians(-130))
+    assert not module.is_steering_angle_reachable(math.pi)
+    assert not module.is_steering_angle_reachable(-math.pi)
+
+
+def test_drive_module_steering_limits_infinity_always_reachable():
+    """Test that infinity steering angle (no change needed) is always reachable."""
+    limit = math.radians(45)  # Very restrictive limits
+    module = DriveModule(
+        name="limited",
+        steering_link="steering_limited",
+        drive_link="drive_limited",
+        steering_axis_xy_position=Point(0.0, 0.5, 0.0),
+        wheel_radius=0.1,
+        wheel_width=0.05,
+        steering_motor_maximum_velocity=1.0,
+        steering_motor_minimum_acceleration=0.1,
+        steering_motor_maximum_acceleration=1.0,
+        drive_motor_maximum_velocity=1.0,
+        drive_motor_minimum_acceleration=0.1,
+        drive_motor_maximum_acceleration=1.0,
+        steering_angle_min=-limit,
+        steering_angle_max=limit
+    )
+
+    # Infinity means no steering change needed, should always be "reachable"
+    assert module.is_steering_angle_reachable(float('inf'))
+    assert module.is_steering_angle_reachable(float('-inf'))
