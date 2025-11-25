@@ -174,7 +174,8 @@ class SwerveController(Node):
             'max_jerk': self.get_parameter("steering_motor_max_jerk").value,
         }
 
-        self.controller = ModuleFollowsBodySteeringController(self.drive_modules, self.get_motion_profile, self.write_log)
+        self.controller = ModuleFollowsBodySteeringController(
+            self.drive_modules, self.get_motion_profile, self.write_debug_log)
 
         # Create online velocity controller for smooth body velocity transitions
         # Uses Ruckig for time-optimal trajectory generation respecting acceleration/jerk limits
@@ -268,13 +269,13 @@ class SwerveController(Node):
                 msg.angular.z == self.last_velocity_command.angular.z:
 
                 # The last command was the same as the current command. So just ignore it and move on.
-                self.get_logger().info(
+                self.get_logger().debug(
                     f'Received a Twist message that is the same as the last message. Taking no action. Message was: "{msg}"'
                 )
 
                 return
 
-        self.get_logger().info(
+        self.get_logger().debug(
             f'Received a Twist message that is different from the last command. Processing message: "{msg}"'
         )
 
@@ -650,8 +651,8 @@ class SwerveController(Node):
 
         self.last_control_update_send_at = self.last_recorded_time
 
-    def write_log(self, text: str):
-        self.get_logger().info(text)
+    def write_debug_log(self, text: str):
+        self.get_logger().debug(text)
 
 
 def main(args=None):
