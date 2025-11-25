@@ -569,9 +569,11 @@ class SwerveController(Node):
 
         # Update the steering controller with the current smoothed velocity command.
         # This replaces the old offline trajectory-based approach with a reactive online approach.
+        # We use the control cycle time as the profile duration - this represents one control step.
+        control_cycle_time = 1.0 / self.cycle_time_in_hertz
         self.controller.on_desired_state_update(
             BodyMotionCommand(
-                0.0,  # time_for_motion - not used in immediate mode
+                control_cycle_time,  # Profile duration is one control cycle
                 smoothed_velocity.linear_x,
                 smoothed_velocity.linear_y,
                 smoothed_velocity.angular_z
