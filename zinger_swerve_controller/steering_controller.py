@@ -351,53 +351,51 @@ class ModuleFollowsBodySteeringController():
         self.previous_module_states = self.module_states
         self.module_states = current_module_states
 
-         # Calculate the current body state
+        # Calculate the current body motion from wheel states (forward kinematics)
         body_motion = self.control_model.body_motion_from_wheel_module_states(self.module_states)
-        # self.logger(
-        #     'Body motion: linear [{}, {}, {}]; rotation [{}, {}, {}]'.format(
-        #         body_motion.linear_velocity.x,
-        #         body_motion.linear_velocity.y,
-        #         body_motion.linear_velocity.z,
-        #         body_motion.angular_velocity.x,
-        #         body_motion.angular_velocity.y,
-        #         body_motion.angular_velocity.z,
-        #     )
-        # )
 
         time_step_in_seconds = self.current_time_in_seconds - self.last_state_update_time
-        # self.logger(
-        #     'Determining body position at {}. Last update at: {}. Time delta: {}'.format(self.current_time_in_seconds, self.last_state_update_time, time_step_in_seconds)
-        # )
 
-        # Position
-        local_x_distance = time_step_in_seconds * 0.5 * (self.body_state.motion_in_body_coordinates.linear_velocity.x + body_motion.linear_velocity.x)
-        local_y_distance = time_step_in_seconds * 0.5 * (self.body_state.motion_in_body_coordinates.linear_velocity.y + body_motion.linear_velocity.y)
+        # Use trapezoidal integration for velocities (average of old and new)
+        avg_vx = 0.5 * (self.body_state.motion_in_body_coordinates.linear_velocity.x + body_motion.linear_velocity.x)
+        avg_vy = 0.5 * (self.body_state.motion_in_body_coordinates.linear_velocity.y + body_motion.linear_velocity.y)
+        avg_omega = 0.5 * (self.body_state.motion_in_body_coordinates.angular_velocity.z + body_motion.angular_velocity.z)
 
-        # Orientation
-        global_orientation = self.body_state.orientation_in_world_coordinates.z + time_step_in_seconds * 0.5 * (self.body_state.motion_in_body_coordinates.angular_velocity.z + body_motion.angular_velocity.z)
+        # Calculate position change using arc-based integration
+        # This properly handles the case where the robot is rotating while translating
+        global_dx, global_dy, new_orientation = self._integrate_odometry_arc(
+            self.body_state.orientation_in_world_coordinates.z,
+            avg_vx,
+            avg_vy,
+            avg_omega,
+            time_step_in_seconds
+        )
 
-        # Acceleration
+        new_x = self.body_state.position_in_world_coordinates.x + global_dx
+        new_y = self.body_state.position_in_world_coordinates.y + global_dy
+
+        # Compute acceleration and jerk from velocity changes (for reference/debugging)
+        # Note: These are numerical derivatives and can be noisy
         local_x_acceleration = 0.0
         local_y_acceleration = 0.0
         orientation_acceleration = 0.0
+        local_x_jerk = 0.0
+        local_y_jerk = 0.0
+        orientation_jerk = 0.0
+
         if not math.isclose(time_step_in_seconds, 0.0, abs_tol=1e-4, rel_tol=1e-4):
             local_x_acceleration = (body_motion.linear_velocity.x - self.body_state.motion_in_body_coordinates.linear_velocity.x) / time_step_in_seconds
             local_y_acceleration = (body_motion.linear_velocity.y - self.body_state.motion_in_body_coordinates.linear_velocity.y) / time_step_in_seconds
             orientation_acceleration = (body_motion.angular_velocity.z - self.body_state.motion_in_body_coordinates.angular_velocity.z) / time_step_in_seconds
 
-        # Jerk
-        local_x_jerk = 0.0
-        local_y_jerk = 0.0
-        orientation_jerk = 0.0
-        if not math.isclose(time_step_in_seconds, 0.0, abs_tol=1e-4, rel_tol=1e-4):
             local_x_jerk = (local_x_acceleration - self.body_state.motion_in_body_coordinates.linear_acceleration.x) / time_step_in_seconds
             local_y_jerk = (local_y_acceleration - self.body_state.motion_in_body_coordinates.linear_acceleration.y) / time_step_in_seconds
             orientation_jerk = (orientation_acceleration - self.body_state.motion_in_body_coordinates.angular_acceleration.z) / time_step_in_seconds
 
         self.body_state = BodyState(
-            self.body_state.position_in_world_coordinates.x + local_x_distance * math.cos(global_orientation) - local_y_distance * math.sin(global_orientation),
-            self.body_state.position_in_world_coordinates.y + local_x_distance * math.sin(global_orientation) + local_y_distance * math.cos(global_orientation),
-            global_orientation,
+            new_x,
+            new_y,
+            new_orientation,
             body_motion.linear_velocity.x,
             body_motion.linear_velocity.y,
             body_motion.angular_velocity.z,
@@ -409,18 +407,76 @@ class ModuleFollowsBodySteeringController():
             orientation_jerk
         )
 
-        # self.logger(
-        #     'position: [{}, {}, {}] orientation [[{}, {}, {}]]'.format(
-        #         self.body_state.position_in_world_coordinates.x,
-        #         self.body_state.position_in_world_coordinates.y,
-        #         self.body_state.position_in_world_coordinates.z,
-        #         self.body_state.orientation_in_world_coordinates.x,
-        #         self.body_state.orientation_in_world_coordinates.y,
-        #         self.body_state.orientation_in_world_coordinates.z,
-        #     )
-        # )
-
         self.last_state_update_time = self.current_time_in_seconds
+
+    def _integrate_odometry_arc(
+            self,
+            theta: float,
+            vx: float,
+            vy: float,
+            omega: float,
+            dt: float) -> tuple:
+        """
+        Integrate odometry using exact arc-based equations.
+
+        When the robot rotates while translating, it follows an arc rather than
+        a straight line. This method computes the exact displacement for constant
+        velocity and angular velocity over the time step.
+
+        For pure translation (omega ≈ 0), this reduces to simple Euler integration.
+        For rotation with translation, it uses the closed-form arc solution.
+
+        Args:
+            theta: Current orientation in world frame (radians)
+            vx: Body-frame x velocity (m/s)
+            vy: Body-frame y velocity (m/s)
+            omega: Angular velocity (rad/s)
+            dt: Time step (seconds)
+
+        Returns:
+            (dx_global, dy_global, new_theta): Displacement in world frame and new orientation
+        """
+        d_theta = omega * dt
+        new_theta = theta + d_theta
+
+        # Threshold for "effectively zero" rotation
+        # Below this, use linear approximation to avoid division by near-zero
+        OMEGA_THRESHOLD = 1e-6
+
+        if abs(omega) < OMEGA_THRESHOLD:
+            # Pure translation (or negligible rotation)
+            # Use midpoint orientation for better accuracy
+            mid_theta = theta + 0.5 * d_theta
+            cos_mid = math.cos(mid_theta)
+            sin_mid = math.sin(mid_theta)
+
+            dx_local = vx * dt
+            dy_local = vy * dt
+
+            dx_global = dx_local * cos_mid - dy_local * sin_mid
+            dy_global = dx_local * sin_mid + dy_local * cos_mid
+        else:
+            # Arc motion: exact integration for constant v and omega
+            # The robot moves along an arc while rotating
+            #
+            # Derivation:
+            # x(t) = ∫ vx*cos(θ+ωt) - vy*sin(θ+ωt) dt
+            # y(t) = ∫ vx*sin(θ+ωt) + vy*cos(θ+ωt) dt
+            #
+            # Solving these integrals gives:
+            # Δx = (vx*(sin(θ+ωdt) - sin(θ)) + vy*(cos(θ+ωdt) - cos(θ))) / ω
+            # Δy = (vx*(-cos(θ+ωdt) + cos(θ)) + vy*(sin(θ+ωdt) - sin(θ))) / ω
+            #
+            # Simplified using sin/cos difference identities:
+            sin_theta = math.sin(theta)
+            cos_theta = math.cos(theta)
+            sin_new = math.sin(new_theta)
+            cos_new = math.cos(new_theta)
+
+            dx_global = (vx * (sin_new - sin_theta) + vy * (cos_new - cos_theta)) / omega
+            dy_global = (vx * (cos_theta - cos_new) + vy * (sin_new - sin_theta)) / omega
+
+        return dx_global, dy_global, new_theta
 
     # On clock tick, determine if we need to recalculate the trajectories for the drive modules
     def on_tick(self, current_time_in_seconds: float):

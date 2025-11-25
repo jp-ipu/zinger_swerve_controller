@@ -407,9 +407,24 @@ class SwerveController(Node):
         return drive_modules
 
     def get_motion_profile(self, start: float, end: float) -> TransientVariableProfile:
-        # Use a simple linear profile for the steering controller's internal trajectory.
-        # The online RuckigVelocityController handles the smooth body velocity transitions,
-        # so this profile just interpolates between states.
+        # NOTE ON PROFILE SYSTEM WITH RUCKIG:
+        # The profile system (BodyMotionProfile, TransientVariableProfile) was originally
+        # designed to smooth velocity transitions over time. Now that RuckigVelocityController
+        # handles body-level velocity smoothing externally, this profile system is largely
+        # redundant for the body motion path:
+        #
+        # 1. Ruckig outputs already-smoothed velocity each control cycle
+        # 2. We create a BodyMotionProfile from current→target over one control cycle (20ms)
+        # 3. We query it at time_fraction≈1.0 (future_time = now + control_cycle)
+        # 4. LinearProfile.value_at(1.0) just returns the target value
+        #
+        # The profile system is effectively a pass-through now. It's kept for:
+        # - Potential sub-cycle interpolation if needed in the future
+        # - The DriveModuleMotionCommand code path (direct wheel control)
+        # - Architectural consistency
+        #
+        # A future simplification could remove BodyMotionProfile and directly use
+        # the Ruckig-smoothed velocity for inverse kinematics.
         return SingleVariableLinearProfile(start, end)
 
     def initialize_drive_module_states(self, drive_modules: List[DriveModule]) -> List[DriveModuleMeasuredValues]:
